@@ -110,8 +110,6 @@ origin:https://example.com
 - 前端：`React 19`、`TypeScript`、`Vite 8`、`Ant Design 6`
 - 桌面端：`Tauri 2`
 - 后端逻辑：`Rust`
-- 网络请求：`reqwest`
-- 本地播放服务：`axum`
 
 ## 环境要求
 
