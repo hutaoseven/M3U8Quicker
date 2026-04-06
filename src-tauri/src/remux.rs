@@ -306,6 +306,24 @@ fn parse_transport_stream(
         return Err(AppError::Conversion(build_stream_type_error(&stream_map)));
     }
 
+    if video_packets.is_empty() {
+        if let Some(st) = stream_map.unsupported_video_stream_type {
+            return Err(AppError::Conversion(format!(
+                "暂不支持的视频编码流类型 0x{:02x}",
+                st
+            )));
+        }
+    }
+
+    if audio_packets.is_empty() {
+        if let Some(st) = stream_map.unsupported_audio_stream_type {
+            return Err(AppError::Conversion(format!(
+                "暂不支持的音频编码流类型 0x{:02x}",
+                st
+            )));
+        }
+    }
+
     let video_track = if video_packets.is_empty() {
         None
     } else {
