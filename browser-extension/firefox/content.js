@@ -68,7 +68,8 @@
     const videos = document.getElementsByTagName("video");
     for (let i = 0; i < videos.length; i += 1) {
       const currentSrc = videos[i].currentSrc || videos[i].src || "";
-      if (currentSrc.indexOf(".m3u8") > -1) {
+      const DIRECT_EXTS = [".mp4", ".mkv", ".avi", ".wmv", ".flv", ".webm", ".mov", ".rmvb"];
+      if (currentSrc.indexOf(".m3u8") > -1 || DIRECT_EXTS.some((ext) => currentSrc.toLowerCase().indexOf(ext) > -1)) {
         reportDetection(currentSrc);
       }
     }
@@ -150,12 +151,34 @@
     }
   }
 
+  function detectFileType(url) {
+    var directPattern = /\.(mp4|mkv|avi|wmv|flv|webm|mov|rmvb)$/i;
+    var directPatternLoose = /\.(mp4|mkv|avi|wmv|flv|webm|mov|rmvb)(?:$|[?#])/i;
+    try {
+      var pathname = new URL(url, window.location.href).pathname;
+      return directPattern.test(pathname) ? "mp4" : "hls";
+    } catch (error) {
+      return directPatternLoose.test(url) ? "mp4" : "hls";
+    }
+  }
+
+  function detectFileExt(url) {
+    var match = url.match(/\.(mp4|mkv|avi|wmv|flv|webm|mov|rmvb)(?:$|[?#])/i);
+    return match ? match[1].toLowerCase() : "mp4";
+  }
+
   function registerTarget(rawUrl, normalizedUrl) {
     latestTarget = normalizedUrl;
     if (!detectedTargets.find((item) => item.url === normalizedUrl)) {
+      var type = detectFileType(rawUrl);
+      var ext = detectFileExt(rawUrl);
+      var fallback = type === "mp4"
+        ? `video-${detectedTargets.length + 1}.${ext}`
+        : `m3u8-${detectedTargets.length + 1}.m3u8`;
       detectedTargets.push({
         url: normalizedUrl,
-        fileName: getFileName(rawUrl, `m3u8-${detectedTargets.length + 1}.m3u8`)
+        fileName: getFileName(rawUrl, fallback),
+        fileType: type
       });
     }
 
@@ -250,7 +273,8 @@
 
   function onButtonClick() {
     if (detectedTargets.length <= 1) {
-      openDownloader(latestTarget);
+      var target = detectedTargets[0];
+      openDownloader(latestTarget, target ? target.fileType : "hls");
       return;
     }
 
@@ -328,7 +352,7 @@
       entry.style.overflowWrap = "anywhere";
       entry.style.cursor = "pointer";
       entry.addEventListener("click", () => {
-        openDownloader(item.url);
+        openDownloader(item.url, item.fileType || "hls");
         panel.remove();
       });
       panel.appendChild(entry);
@@ -337,13 +361,16 @@
     getUiRoot().appendChild(panel);
   }
 
-  function openDownloader(target) {
+  function openDownloader(target, fileType) {
     if (!target) {
       return;
     }
     const params = new URLSearchParams({
       url: target,
     });
+    if (fileType && fileType !== "hls") {
+      params.set("file_type", fileType);
+    }
     const extraHeaders = buildExtraHeaders();
     if (extraHeaders) {
       params.set("extra_headers", extraHeaders);
