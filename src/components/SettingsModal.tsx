@@ -273,7 +273,7 @@ export function SettingsModal({
             </Space>
           </Radio.Group>
 
-          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
             <Typography.Text strong>代理设置</Typography.Text>
             <Space style={{ width: "100%", justifyContent: "space-between" }}>
               <Typography.Text>启用代理</Typography.Text>
@@ -339,36 +339,39 @@ export function SettingsModal({
           </Space>
           <Space direction="vertical" size={8} style={{ width: "100%" }}>
             <Typography.Text strong>下载限速</Typography.Text>
-            <Radio.Group
-              value={speedLimitMode}
-              disabled={loading || savingSpeedLimit}
-              onChange={(event) =>
-                void updateSpeedLimitMode(event.target.value as SpeedLimitMode)
-              }
-            >
-              <Radio.Button value="unlimited">不限速</Radio.Button>
-              <Radio.Button value="limited">限速</Radio.Button>
-            </Radio.Group>
-            <InputNumber
-              min={1}
-              precision={0}
-              addonAfter="KB/s"
-              value={downloadSpeedLimitKbps ?? undefined}
-              style={{ width: "100%" }}
-              disabled={
-                loading || savingSpeedLimit || speedLimitMode === "unlimited"
-              }
-              placeholder="请输入下载限速"
-              onChange={(value) =>
-                setDownloadSpeedLimitKbps(
-                  typeof value === "number" ? value : null
-                )
-              }
-              onBlur={() => {
-                if (speedLimitMode !== "limited") return;
-                void saveDownloadSpeedLimitValue(downloadSpeedLimitKbps);
-              }}
-            />
+            <div>
+              <Radio.Group
+                value={speedLimitMode}
+                disabled={loading || savingSpeedLimit}
+                style={{ display: "block", marginBottom: 6 }}
+                onChange={(event) =>
+                  void updateSpeedLimitMode(event.target.value as SpeedLimitMode)
+                }
+              >
+                <Radio.Button value="unlimited">不限速</Radio.Button>
+                <Radio.Button value="limited">限速</Radio.Button>
+              </Radio.Group>
+              <InputNumber
+                min={1}
+                precision={0}
+                addonAfter="KB/s"
+                value={downloadSpeedLimitKbps ?? undefined}
+                style={{ width: "100%" }}
+                disabled={
+                  loading || savingSpeedLimit || speedLimitMode === "unlimited"
+                }
+                placeholder="请输入下载限速"
+                onChange={(value) =>
+                  setDownloadSpeedLimitKbps(
+                    typeof value === "number" ? value : null
+                  )
+                }
+                onBlur={() => {
+                  if (speedLimitMode !== "limited") return;
+                  void saveDownloadSpeedLimitValue(downloadSpeedLimitKbps);
+                }}
+              />
+            </div>
           </Space>
           <Space direction="vertical" size={8} style={{ width: "100%" }}>
             <Typography.Text strong>下载完成后</Typography.Text>
@@ -384,7 +387,7 @@ export function SettingsModal({
                 />
               </Space>
               <Space size={12}>
-                <Typography.Text>合并 MP4</Typography.Text>
+                <Typography.Text>合并mp4</Typography.Text>
                 <Switch
                   checked={convertToMp4}
                   loading={loading || savingDownloadOutput}
