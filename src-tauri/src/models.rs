@@ -10,11 +10,38 @@ pub type RequestHeaders = HashMap<String, String>;
 pub enum FileType {
     Hls,
     Mp4,
+    Mkv,
+    Avi,
+    Wmv,
+    Flv,
+    Webm,
+    Mov,
+    Rmvb,
 }
 
 impl Default for FileType {
     fn default() -> Self {
         FileType::Hls
+    }
+}
+
+impl FileType {
+    pub fn is_direct_download(self) -> bool {
+        !matches!(self, FileType::Hls)
+    }
+
+    pub fn default_extension(self) -> Option<&'static str> {
+        match self {
+            FileType::Hls => None,
+            FileType::Mp4 => Some("mp4"),
+            FileType::Mkv => Some("mkv"),
+            FileType::Avi => Some("avi"),
+            FileType::Wmv => Some("wmv"),
+            FileType::Flv => Some("flv"),
+            FileType::Webm => Some("webm"),
+            FileType::Mov => Some("mov"),
+            FileType::Rmvb => Some("rmvb"),
+        }
     }
 }
 
@@ -330,5 +357,27 @@ mod tests {
         settings.sanitize();
 
         assert_eq!(settings.download_speed_limit_kbps, 1024);
+    }
+
+    #[test]
+    fn file_type_direct_download_variants_report_extensions() {
+        let cases = [
+            (FileType::Mp4, Some("mp4")),
+            (FileType::Mkv, Some("mkv")),
+            (FileType::Avi, Some("avi")),
+            (FileType::Wmv, Some("wmv")),
+            (FileType::Flv, Some("flv")),
+            (FileType::Webm, Some("webm")),
+            (FileType::Mov, Some("mov")),
+            (FileType::Rmvb, Some("rmvb")),
+        ];
+
+        for (file_type, expected_extension) in cases {
+            assert!(file_type.is_direct_download());
+            assert_eq!(file_type.default_extension(), expected_extension);
+        }
+
+        assert!(!FileType::Hls.is_direct_download());
+        assert_eq!(FileType::Hls.default_extension(), None);
     }
 }

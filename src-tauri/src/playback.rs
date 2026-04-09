@@ -105,8 +105,11 @@ impl DownloadPriorityState {
         failed_segment_indices: &[usize],
     ) {
         let mut inner = self.inner.lock().await;
-        inner.pending =
-            build_pending_queue(total_segments, completed_segment_indices, failed_segment_indices);
+        inner.pending = build_pending_queue(
+            total_segments,
+            completed_segment_indices,
+            failed_segment_indices,
+        );
         let high_priority_window = inner.high_priority_window.clone();
         reorder_pending(&mut inner.pending, &high_priority_window);
         inner.in_progress.clear();
@@ -132,7 +135,11 @@ impl DownloadPriorityState {
     pub async fn mark_segment_skipped(&self, segment_index: usize) {
         let mut inner = self.inner.lock().await;
         inner.in_progress.remove(&segment_index);
-        if let Some(position) = inner.pending.iter().position(|value| *value == segment_index) {
+        if let Some(position) = inner
+            .pending
+            .iter()
+            .position(|value| *value == segment_index)
+        {
             inner.pending.remove(position);
         }
         self.notify.notify_waiters();
@@ -193,10 +200,7 @@ impl PlaybackHttpError {
     fn new(status: StatusCode, message: impl Into<String>) -> Self {
         let message = message.into();
         playback_log(&format!("http error status={} message={}", status, message));
-        Self {
-            status,
-            message,
-        }
+        Self { status, message }
     }
 }
 
@@ -234,7 +238,10 @@ fn build_playback_router(state: PlaybackHttpState) -> Router {
     Router::new()
         .route("/playback/{task_id}/index.m3u8", get(serve_playlist))
         .route("/playback/{task_id}/file", get(serve_file))
-        .route("/playback/{task_id}/segments/{segment_index}", get(serve_segment))
+        .route(
+            "/playback/{task_id}/segments/{segment_index}",
+            get(serve_segment),
+        )
         .with_state(state)
 }
 
@@ -283,9 +290,13 @@ pub async fn prepare_download_priority_state(
         priorities.get(task_id).cloned()
     };
 
-        if let Some(priority_state) = existing {
+    if let Some(priority_state) = existing {
         priority_state
-            .reinitialize(total_segments, completed_segment_indices, failed_segment_indices)
+            .reinitialize(
+                total_segments,
+                completed_segment_indices,
+                failed_segment_indices,
+            )
             .await;
         playback_log(&format!(
             "reset download priority state task_id={} total_segments={} completed={}",
@@ -460,15 +471,17 @@ async fn serve_playlist(
     let response = match build_playlist(&task, &query.token) {
         Ok(playlist) => with_playback_headers(
             (
-            [(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("application/vnd.apple.mpegurl"),
-            )],
-            playlist,
-        )
+                [(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/vnd.apple.mpegurl"),
+                )],
+                playlist,
+            )
                 .into_response(),
         ),
-        Err(error) => PlaybackHttpError::new(StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+        Err(error) => {
+            PlaybackHttpError::new(StatusCode::BAD_REQUEST, error.to_string()).into_response()
+        }
     };
     playback_log(&format!(
         "playlist served task_id={} status={:?} segments={}",
@@ -529,12 +542,13 @@ async fn serve_segment(
         return PlaybackHttpError::new(StatusCode::NOT_FOUND, "切片不存在").into_response();
     }
 
-    let response = match read_or_wait_for_segment(&state, &task, &query.token, segment_index).await {
+    let response = match read_or_wait_for_segment(&state, &task, &query.token, segment_index).await
+    {
         Ok(bytes) => with_playback_headers(
             (
-            [(header::CONTENT_TYPE, HeaderValue::from_static("video/mp2t"))],
-            bytes,
-        )
+                [(header::CONTENT_TYPE, HeaderValue::from_static("video/mp2t"))],
+                bytes,
+            )
                 .into_response(),
         ),
         Err(error) => error.into_response(),
@@ -559,9 +573,10 @@ async fn build_completed_file_response(
         ));
     }
 
-    let file_path = task.file_path.as_ref().ok_or_else(|| {
-        PlaybackHttpError::new(StatusCode::NOT_FOUND, "下载完成文件不存在")
-    })?;
+    let file_path = task
+        .file_path
+        .as_ref()
+        .ok_or_else(|| PlaybackHttpError::new(StatusCode::NOT_FOUND, "下载完成文件不存在"))?;
     let path = std::path::PathBuf::from(file_path);
     if !path.is_file() {
         return Err(PlaybackHttpError::new(
@@ -576,7 +591,9 @@ async fn build_completed_file_response(
     let file_size = file
         .metadata()
         .await
-        .map_err(|error| PlaybackHttpError::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .map_err(|error| {
+            PlaybackHttpError::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+        })?
         .len();
     if file_size == 0 {
         return Err(PlaybackHttpError::new(
@@ -591,9 +608,9 @@ async fn build_completed_file_response(
     };
     let content_length = end - start + 1;
 
-    file.seek(SeekFrom::Start(start))
-        .await
-        .map_err(|error| PlaybackHttpError::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    file.seek(SeekFrom::Start(start)).await.map_err(|error| {
+        PlaybackHttpError::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+    })?;
 
     let stream = ReaderStream::new(file.take(content_length));
     let body = Body::from_stream(stream);
@@ -604,10 +621,7 @@ async fn build_completed_file_response(
         header::CONTENT_TYPE,
         HeaderValue::from_static(content_type_for_file_path(file_path)),
     );
-    response_headers.insert(
-        header::ACCEPT_RANGES,
-        HeaderValue::from_static("bytes"),
-    );
+    response_headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     response_headers.insert(
         header::CONTENT_LENGTH,
         HeaderValue::from_str(&content_length.to_string()).map_err(|error| {
@@ -618,7 +632,9 @@ async fn build_completed_file_response(
         response_headers.insert(
             header::CONTENT_RANGE,
             HeaderValue::from_str(&format!("bytes {}-{}/{}", start, end, file_size)).map_err(
-                |error| PlaybackHttpError::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+                |error| {
+                    PlaybackHttpError::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+                },
             )?,
         );
     }
@@ -654,9 +670,12 @@ async fn read_or_wait_for_segment(
         segment_path.display()
     ));
 
-    if let Err(error) =
-        prioritize_download_position(&state.download_priorities, task, total_duration_before(task, segment_index))
-            .await
+    if let Err(error) = prioritize_download_position(
+        &state.download_priorities,
+        task,
+        total_duration_before(task, segment_index),
+    )
+    .await
     {
         return Err(PlaybackHttpError::new(
             StatusCode::BAD_REQUEST,
@@ -716,10 +735,7 @@ async fn read_or_wait_for_segment(
                     "segment wait aborted because task cancelled task_id={} segment_index={}",
                     task.id, segment_index
                 ));
-                return Err(PlaybackHttpError::new(
-                    StatusCode::GONE,
-                    "下载任务已取消",
-                ));
+                return Err(PlaybackHttpError::new(StatusCode::GONE, "下载任务已取消"));
             }
             DownloadStatus::Failed(message) => {
                 playback_log(&format!(
@@ -741,7 +757,10 @@ async fn read_or_wait_for_segment(
             _ => {}
         }
 
-        if task_state.failed_segment_indices.contains(&(segment_index + 1)) {
+        if task_state
+            .failed_segment_indices
+            .contains(&(segment_index + 1))
+        {
             playback_log(&format!(
                 "segment wait aborted because segment skipped task_id={} segment_index={}",
                 task.id, segment_index
@@ -846,7 +865,9 @@ fn build_pending_queue(
         .collect::<HashSet<_>>();
 
     (0..total_segments)
-        .filter(|segment_index| !completed.contains(segment_index) && !failed.contains(segment_index))
+        .filter(|segment_index| {
+            !completed.contains(segment_index) && !failed.contains(segment_index)
+        })
         .collect::<VecDeque<_>>()
 }
 
@@ -883,9 +904,9 @@ fn parse_byte_range(
     let Some(range_header) = headers.get(header::RANGE) else {
         return Ok(None);
     };
-    let range_header = range_header.to_str().map_err(|error| {
-        PlaybackHttpError::new(StatusCode::BAD_REQUEST, error.to_string())
-    })?;
+    let range_header = range_header
+        .to_str()
+        .map_err(|error| PlaybackHttpError::new(StatusCode::BAD_REQUEST, error.to_string()))?;
     let Some(range_value) = range_header.strip_prefix("bytes=") else {
         return Err(PlaybackHttpError::new(
             StatusCode::RANGE_NOT_SATISFIABLE,
@@ -952,6 +973,13 @@ fn content_type_for_file_path(file_path: &str) -> &'static str {
         .as_str()
     {
         "mp4" => "video/mp4",
+        "mkv" => "video/x-matroska",
+        "avi" => "video/x-msvideo",
+        "wmv" => "video/x-ms-wmv",
+        "flv" => "video/x-flv",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "rmvb" => "application/vnd.rn-realmedia-vbr",
         "ts" => "video/mp2t",
         _ => "application/octet-stream",
     }

@@ -10,7 +10,36 @@ export type DownloadStatus =
 
 export type DownloadGroup = "active" | "history";
 
-export type FileType = "hls" | "mp4";
+export type DirectFileType =
+  | "mp4"
+  | "mkv"
+  | "avi"
+  | "wmv"
+  | "flv"
+  | "webm"
+  | "mov"
+  | "rmvb";
+
+export type FileType = "hls" | DirectFileType;
+
+export const DIRECT_FILE_TYPES: DirectFileType[] = [
+  "mp4",
+  "mkv",
+  "avi",
+  "wmv",
+  "flv",
+  "webm",
+  "mov",
+  "rmvb",
+];
+
+export const FILE_TYPE_OPTIONS: Array<{ value: FileType; label: string }> = [
+  { value: "hls", label: "HLS" },
+  ...DIRECT_FILE_TYPES.map((value) => ({
+    value,
+    label: value.toUpperCase(),
+  })),
+];
 
 export interface DownloadTaskSummary {
   id: string;
@@ -101,6 +130,29 @@ export interface FirefoxExtensionInstallResult {
   manual_url: string;
 }
 
+export function isDirectFileType(
+  fileType: FileType | null | undefined
+): fileType is DirectFileType {
+  return fileType !== undefined && fileType !== null && fileType !== "hls";
+}
+
+export function parseFileType(value: string | null | undefined): FileType | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "hls") {
+    return "hls";
+  }
+
+  return DIRECT_FILE_TYPES.find((fileType) => fileType === normalized);
+}
+
+export function getFileTypeLabel(fileType: FileType): string {
+  return fileType === "hls" ? "HLS" : fileType.toUpperCase();
+}
+
 export function deriveFilenameFromUrl(url: string): string {
   try {
     const parsed = new URL(url.trim());
@@ -137,11 +189,16 @@ function normalizeDownloadFilename(name: string): string {
   if (lower.endsWith(".m3u8")) {
     return sanitized.slice(0, -5);
   }
-  if (lower.endsWith(".mp4")) {
-    return sanitized.slice(0, -4);
-  }
   if (lower.endsWith(".ts")) {
     return sanitized.slice(0, -3);
   }
+
+  for (const fileType of DIRECT_FILE_TYPES) {
+    const suffix = `.${fileType}`;
+    if (lower.endsWith(suffix)) {
+      return sanitized.slice(0, -suffix.length);
+    }
+  }
+
   return sanitized;
 }

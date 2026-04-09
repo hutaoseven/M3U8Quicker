@@ -28,6 +28,7 @@ import type {
   DownloadTaskSummary,
   DownloadStatus,
 } from "../types";
+import { getFileTypeLabel, isDirectFileType } from "../types";
 import { openFileLocation } from "../services/api";
 
 interface DownloadListProps {
@@ -275,56 +276,62 @@ export function DownloadList({
       title: "文件名",
       key: "filename",
       render: (_, record) => (
-        <div
-          style={{
-            minWidth: 0,
-            width: "100%",
-          }}
-        >
-          <div
-            title={record.filename}
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              lineHeight: 1.5715,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <Tag
-              color={record.file_type === "mp4" ? "blue" : "cyan"}
-              style={{ marginInlineEnd: 0, flexShrink: 0 }}
-            >
-              {record.file_type === "mp4" ? "MP4" : "HLS"}
-            </Tag>
-            <span
+        (() => {
+          const isDirectDownload = isDirectFileType(record.file_type);
+
+          return (
+            <div
               style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                minWidth: 0,
+                width: "100%",
               }}
             >
-              {record.filename}
-            </span>
-          </div>
-          {record.encryption_method && (
-            <Typography.Text
-              type="secondary"
-              style={{
-                display: "block",
-                fontSize: 12,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={`加密方式：${record.encryption_method}`}
-            >
-              加密方式：{record.encryption_method}
-            </Typography.Text>
-          )}
-        </div>
+              <div
+                title={record.filename}
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  lineHeight: 1.5715,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Tag
+                  color={isDirectDownload ? "blue" : "cyan"}
+                  style={{ marginInlineEnd: 0, flexShrink: 0 }}
+                >
+                  {getFileTypeLabel(record.file_type)}
+                </Tag>
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {record.filename}
+                </span>
+              </div>
+              {record.encryption_method && (
+                <Typography.Text
+                  type="secondary"
+                  style={{
+                    display: "block",
+                    fontSize: 12,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={`加密方式：${record.encryption_method}`}
+                >
+                  加密方式：{record.encryption_method}
+                </Typography.Text>
+              )}
+            </div>
+          );
+        })()
       ),
     },
     {
@@ -349,7 +356,7 @@ export function DownloadList({
             }
           />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {record.file_type === "mp4" ? (
+            {isDirectFileType(record.file_type) ? (
               <span>{formatBytes(record.total_bytes)}</span>
             ) : (
               <>

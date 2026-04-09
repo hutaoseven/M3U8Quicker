@@ -1,9 +1,16 @@
 import { useState, useEffect } from "react";
-import { Modal, Form, Input, Button, Space, Radio, message } from "antd";
+import { Modal, Form, Input, Button, Space, Select, message } from "antd";
 import { FolderOpenOutlined } from "@ant-design/icons";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getDefaultDownloadDir, setDefaultDownloadDir } from "../services/api";
-import { deriveFilenameFromUrl, type CreateDownloadParams, type FileType } from "../types";
+import {
+  deriveFilenameFromUrl,
+  FILE_TYPE_OPTIONS,
+  getFileTypeLabel,
+  isDirectFileType,
+  type CreateDownloadParams,
+  type FileType,
+} from "../types";
 
 interface NewDownloadModalProps {
   open: boolean;
@@ -85,6 +92,17 @@ export function NewDownloadModal({
     }
   };
 
+  const directFileType = isDirectFileType(fileType) ? fileType : "mp4";
+  const urlLabel = isDirectFileType(fileType)
+    ? `${getFileTypeLabel(fileType)} 地址`
+    : "M3U8 地址";
+  const urlPlaceholder = isDirectFileType(fileType)
+    ? `https://example.com/video/file.${directFileType}`
+    : "https://example.com/video/playlist.m3u8";
+  const urlRequiredMessage = isDirectFileType(fileType)
+    ? `请输入 ${getFileTypeLabel(fileType)} 地址`
+    : "请输入 M3U8 地址";
+
   return (
     <Modal
       title="新建下载"
@@ -101,21 +119,19 @@ export function NewDownloadModal({
         onFinish={handleSubmit}
       >
         <Form.Item name="file_type" label="文件类型">
-          <Radio.Group
+          <Select
             value={fileType}
-            onChange={(e) => setFileType(e.target.value)}
-          >
-            <Radio.Button value="hls">HLS</Radio.Button>
-            <Radio.Button value="mp4">MP4</Radio.Button>
-          </Radio.Group>
+            options={FILE_TYPE_OPTIONS}
+            onChange={(value: FileType) => setFileType(value)}
+          />
         </Form.Item>
         <Form.Item
           name="url"
-          label={fileType === "mp4" ? "MP4 地址" : "M3U8 地址"}
-          rules={[{ required: true, message: fileType === "mp4" ? "请输入 MP4 地址" : "请输入 M3U8 地址" }]}
+          label={urlLabel}
+          rules={[{ required: true, message: urlRequiredMessage }]}
         >
           <Input.TextArea
-            placeholder={fileType === "mp4" ? "https://example.com/video/file.mp4" : "https://example.com/video/playlist.m3u8"}
+            placeholder={urlPlaceholder}
             rows={3}
             autoFocus
             onChange={(event) => handleUrlChange(event.target.value)}

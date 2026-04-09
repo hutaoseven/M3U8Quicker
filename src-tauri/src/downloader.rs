@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
+use std::ffi::OsString;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -503,7 +504,22 @@ fn resolve_available_output_path(output_dir: &Path, filename: &str) -> PathBuf {
 }
 
 fn mp4_partial_path_for_output_path(mp4_path: &Path) -> PathBuf {
-    mp4_path.with_extension("mp4.partial")
+    let Some(file_name) = mp4_path.file_name() else {
+        return mp4_path.with_extension("partial");
+    };
+
+    let mut partial_name = OsString::from(file_name);
+    partial_name.push(".partial");
+    mp4_path.with_file_name(partial_name)
+}
+
+fn normalize_mp4_output_filename(filename: &str) -> String {
+    let (_, extension) = split_filename_and_extension(filename);
+    if extension.is_some() {
+        filename.to_string()
+    } else {
+        ensure_extension(filename, "mp4")
+    }
 }
 
 fn find_existing_mp4_partial_path(output_dir: &Path, filename: &str) -> Option<PathBuf> {
@@ -544,7 +560,7 @@ fn mp4_output_path_from_partial_path(partial_path: &Path) -> PathBuf {
 }
 
 fn resolve_available_mp4_output_paths(output_dir: &Path, filename: &str) -> (PathBuf, PathBuf) {
-    let mp4_filename = ensure_extension(filename, "mp4");
+    let mp4_filename = normalize_mp4_output_filename(filename);
     let (base_name, extension) = split_filename_and_extension(&mp4_filename);
     let mut candidate = output_dir.join(build_filename(&base_name, extension.as_deref()));
     let mut index = 1usize;
@@ -569,7 +585,7 @@ fn resolve_mp4_output_paths(
     filename: &str,
     prefer_existing_partial: bool,
 ) -> (PathBuf, PathBuf) {
-    let mp4_filename = ensure_extension(filename, "mp4");
+    let mp4_filename = normalize_mp4_output_filename(filename);
 
     if prefer_existing_partial {
         if let Some(partial_path) = find_existing_mp4_partial_path(output_dir, &mp4_filename) {
@@ -584,7 +600,7 @@ fn resolve_mp4_output_paths(
 }
 
 fn resolve_existing_mp4_partial_paths(output_dir: &Path, filename: &str) -> (PathBuf, PathBuf) {
-    let mp4_filename = ensure_extension(filename, "mp4");
+    let mp4_filename = normalize_mp4_output_filename(filename);
 
     if let Some(partial_path) = find_existing_mp4_partial_path(output_dir, &mp4_filename) {
         return (
@@ -1855,6 +1871,21 @@ mod tests {
     }
 
     #[test]
+    fn resolve_mp4_output_paths_preserves_non_mp4_extension() {
+        let temp_root = unique_temp_path("direct-file-partial-reuse");
+        fs::create_dir_all(&temp_root).expect("create temp dir");
+        let partial_path = temp_root.join("video.mkv.partial");
+        fs::write(&partial_path, b"partial").expect("write partial file");
+
+        let (resolved_final_path, resolved_partial_path) =
+            resolve_mp4_output_paths(&temp_root, "video.mkv", true);
+
+        assert_eq!(resolved_final_path, temp_root.join("video.mkv"));
+        assert_eq!(resolved_partial_path, partial_path);
+        remove_temp_dir(&temp_root);
+    }
+
+    #[test]
     fn mp4_resume_response_mode_appends_on_partial_content() {
         assert_eq!(
             mp4_resume_response_mode(StatusCode::PARTIAL_CONTENT),
@@ -1889,6 +1920,21 @@ mod tests {
         fs::write(&partial_path, b"partial").expect("write partial file");
 
         cleanup_mp4_partial_file(&temp_root, "video")
+            .await
+            .expect("cleanup partial file");
+
+        assert!(!partial_path.exists());
+        remove_temp_dir(&temp_root);
+    }
+
+    #[tokio::test]
+    async fn cleanup_mp4_partial_file_removes_existing_non_mp4_partial() {
+        let temp_root = unique_temp_path("direct-file-partial-cleanup");
+        fs::create_dir_all(&temp_root).expect("create temp dir");
+        let partial_path = temp_root.join("video.webm.partial");
+        fs::write(&partial_path, b"partial").expect("write partial file");
+
+        cleanup_mp4_partial_file(&temp_root, "video.webm")
             .await
             .expect("cleanup partial file");
 

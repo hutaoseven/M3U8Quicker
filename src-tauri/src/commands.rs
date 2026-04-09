@@ -20,6 +20,9 @@ use crate::state::AppState;
 const CHROME_EXTENSIONS_URL: &str = "chrome://extensions/";
 const EDGE_EXTENSIONS_URL: &str = "edge://extensions/";
 const FIREFOX_ADDONS_URL: &str = "about:debugging#/runtime/this-firefox";
+const NORMALIZED_DOWNLOAD_EXTENSIONS: &[&str] = &[
+    "m3u8", "mp4", "mkv", "avi", "wmv", "flv", "webm", "mov", "rmvb", "ts",
+];
 
 #[tauri::command]
 pub async fn create_download(
@@ -53,107 +56,109 @@ pub async fn create_download(
             .filter(|name| !name.trim().is_empty())
             .unwrap_or_else(|| derive_filename_from_url(&params.url)),
     );
+    let filename = if file_type.is_direct_download() {
+        normalize_direct_download_filename(filename, file_type)
+    } else {
+        filename
+    };
 
     // Ensure output directory exists
     tokio::fs::create_dir_all(&output_dir).await?;
 
     let created_at = Utc::now();
 
-    match file_type {
-        FileType::Mp4 => {
-            let task = DownloadTask {
-                id: id.clone(),
-                url: params.url.clone(),
-                filename: filename.clone(),
-                file_type: FileType::Mp4,
-                encryption_method: None,
-                output_dir: output_dir.clone(),
-                extra_headers: params.extra_headers.clone(),
-                status: DownloadStatus::Downloading,
-                total_segments: 0,
-                completed_segments: 0,
-                completed_segment_indices: Vec::new(),
-                failed_segment_indices: Vec::new(),
-                segment_uris: Vec::new(),
-                segment_durations: Vec::new(),
-                total_bytes: 0,
-                speed_bytes_per_sec: 0,
-                created_at,
-                completed_at: None,
-                updated_at: Some(created_at),
-                file_path: None,
-            };
+    if file_type.is_direct_download() {
+        let task = DownloadTask {
+            id: id.clone(),
+            url: params.url.clone(),
+            filename: filename.clone(),
+            file_type,
+            encryption_method: None,
+            output_dir: output_dir.clone(),
+            extra_headers: params.extra_headers.clone(),
+            status: DownloadStatus::Downloading,
+            total_segments: 0,
+            completed_segments: 0,
+            completed_segment_indices: Vec::new(),
+            failed_segment_indices: Vec::new(),
+            segment_uris: Vec::new(),
+            segment_durations: Vec::new(),
+            total_bytes: 0,
+            speed_bytes_per_sec: 0,
+            created_at,
+            completed_at: None,
+            updated_at: Some(created_at),
+            file_path: None,
+        };
 
-            {
-                let mut downloads = state.downloads.lock().await;
-                downloads.insert(id.clone(), task.clone());
-            }
-            persistence::save_task(&app_handle, &task).await?;
-
-            start_mp4_download_worker(
-                app_handle.clone(),
-                state.downloads.clone(),
-                state.cancel_tokens.clone(),
-                state.http_client.clone(),
-                task.clone(),
-                request_headers,
-                false,
-                false,
-            )
-            .await;
-
-            Ok(persistence::task_to_summary(&task))
+        {
+            let mut downloads = state.downloads.lock().await;
+            downloads.insert(id.clone(), task.clone());
         }
-        FileType::Hls => {
-            let mut segments: Vec<crate::models::SegmentInfo> =
-                downloader::resolve_m3u8(&client, &params.url, &request_headers).await?;
-            downloader::fetch_encryption_keys(&client, &mut segments, &request_headers).await?;
+        persistence::save_task(&app_handle, &task).await?;
 
-            let task = DownloadTask {
-                id: id.clone(),
-                url: params.url.clone(),
-                filename: filename.clone(),
-                file_type: FileType::Hls,
-                encryption_method: detect_encryption_method(&segments),
-                output_dir: output_dir.clone(),
-                extra_headers: params.extra_headers.clone(),
-                status: DownloadStatus::Downloading,
-                total_segments: segments.len(),
-                completed_segments: 0,
-                completed_segment_indices: Vec::new(),
-                failed_segment_indices: Vec::new(),
-                segment_uris: segment_uris(&segments),
-                segment_durations: segment_durations(&segments),
-                total_bytes: 0,
-                speed_bytes_per_sec: 0,
-                created_at,
-                completed_at: None,
-                updated_at: Some(created_at),
-                file_path: None,
-            };
+        start_mp4_download_worker(
+            app_handle.clone(),
+            state.downloads.clone(),
+            state.cancel_tokens.clone(),
+            state.http_client.clone(),
+            task.clone(),
+            request_headers,
+            false,
+            false,
+        )
+        .await;
 
-            {
-                let mut downloads = state.downloads.lock().await;
-                downloads.insert(id.clone(), task.clone());
-            }
-            persistence::save_task(&app_handle, &task).await?;
+        Ok(persistence::task_to_summary(&task))
+    } else {
+        let mut segments: Vec<crate::models::SegmentInfo> =
+            downloader::resolve_m3u8(&client, &params.url, &request_headers).await?;
+        downloader::fetch_encryption_keys(&client, &mut segments, &request_headers).await?;
 
-            start_download_worker(
-                app_handle.clone(),
-                state.downloads.clone(),
-                state.cancel_tokens.clone(),
-                state.playback_sessions.clone(),
-                state.download_priorities.clone(),
-                state.http_client.clone(),
-                task.clone(),
-                segments,
-                request_headers,
-                state.max_concurrent_segments.clone(),
-            )
-            .await;
+        let task = DownloadTask {
+            id: id.clone(),
+            url: params.url.clone(),
+            filename: filename.clone(),
+            file_type: FileType::Hls,
+            encryption_method: detect_encryption_method(&segments),
+            output_dir: output_dir.clone(),
+            extra_headers: params.extra_headers.clone(),
+            status: DownloadStatus::Downloading,
+            total_segments: segments.len(),
+            completed_segments: 0,
+            completed_segment_indices: Vec::new(),
+            failed_segment_indices: Vec::new(),
+            segment_uris: segment_uris(&segments),
+            segment_durations: segment_durations(&segments),
+            total_bytes: 0,
+            speed_bytes_per_sec: 0,
+            created_at,
+            completed_at: None,
+            updated_at: Some(created_at),
+            file_path: None,
+        };
 
-            Ok(persistence::task_to_summary(&task))
+        {
+            let mut downloads = state.downloads.lock().await;
+            downloads.insert(id.clone(), task.clone());
         }
+        persistence::save_task(&app_handle, &task).await?;
+
+        start_download_worker(
+            app_handle.clone(),
+            state.downloads.clone(),
+            state.cancel_tokens.clone(),
+            state.playback_sessions.clone(),
+            state.download_priorities.clone(),
+            state.http_client.clone(),
+            task.clone(),
+            segments,
+            request_headers,
+            state.max_concurrent_segments.clone(),
+        )
+        .await;
+
+        Ok(persistence::task_to_summary(&task))
     }
 }
 
@@ -224,7 +229,7 @@ pub async fn resume_download(
 
     let request_headers = parse_request_headers(task.extra_headers.as_deref())?;
 
-    if task.file_type == FileType::Mp4 {
+    if task.file_type.is_direct_download() {
         let client = state.http_client.read().await.clone();
         let resume_check = downloader::check_mp4_resume(
             &client,
@@ -343,7 +348,7 @@ pub async fn check_resume_download(
         ));
     }
 
-    if task.file_type != FileType::Mp4 {
+    if !task.file_type.is_direct_download() {
         return Ok(ResumeDownloadCheckResult {
             action: ResumeDownloadAction::Resume,
             downloaded_bytes: task.total_bytes,
@@ -475,7 +480,7 @@ pub async fn cancel_download(
 
     if let Some(token) = token {
         token.cancel();
-    } else if task.file_type == FileType::Mp4 {
+    } else if task.file_type.is_direct_download() {
         downloader::cleanup_mp4_partial_file(&PathBuf::from(&task.output_dir), &task.filename)
             .await?;
     } else {
@@ -589,7 +594,7 @@ pub async fn remove_download(
             }
         }
         playback::remove_download_priority_state(&state.download_priorities, &task.id).await;
-        if task.file_type == FileType::Mp4 {
+        if task.file_type.is_direct_download() {
             let _ = downloader::cleanup_mp4_partial_file(
                 &PathBuf::from(&task.output_dir),
                 &task.filename,
@@ -1591,6 +1596,21 @@ fn derive_filename_from_url(url: &str) -> String {
         .unwrap_or_else(|| "download".to_string())
 }
 
+fn normalize_direct_download_filename(name: String, file_type: FileType) -> String {
+    let expected_extension = file_type.default_extension().unwrap_or("mp4");
+    let stem = strip_known_download_extension(&name).unwrap_or(&name);
+    ensure_download_extension(stem, expected_extension)
+}
+
+fn ensure_download_extension(filename: &str, extension: &str) -> String {
+    let expected_suffix = format!(".{}", extension);
+    if filename.to_ascii_lowercase().ends_with(&expected_suffix) {
+        filename.to_string()
+    } else {
+        format!("{}.{}", filename, extension)
+    }
+}
+
 fn parse_request_headers(raw: Option<&str>) -> Result<RequestHeaders, AppError> {
     let mut headers = RequestHeaders::new();
 
@@ -1647,16 +1667,22 @@ fn normalize_download_filename(name: String) -> String {
         sanitized
     };
 
-    let lower = fallback.to_ascii_lowercase();
-    if lower.ends_with(".m3u8") {
-        fallback[..fallback.len() - 5].to_string()
-    } else if lower.ends_with(".mp4") {
-        fallback[..fallback.len() - 4].to_string()
-    } else if lower.ends_with(".ts") {
-        fallback[..fallback.len() - 3].to_string()
-    } else {
-        fallback
+    strip_known_download_extension(&fallback)
+        .unwrap_or(&fallback)
+        .to_string()
+}
+
+fn strip_known_download_extension(name: &str) -> Option<&str> {
+    let lower = name.to_ascii_lowercase();
+
+    for extension in NORMALIZED_DOWNLOAD_EXTENSIONS {
+        let suffix = format!(".{}", extension);
+        if lower.ends_with(&suffix) {
+            return Some(&name[..name.len() - suffix.len()]);
+        }
     }
+
+    None
 }
 
 fn resolve_chrome_extension_dir(app_handle: &AppHandle) -> Result<PathBuf, AppError> {
@@ -2107,6 +2133,42 @@ mod tests {
                 encryption: None,
             })
             .collect()
+    }
+
+    #[test]
+    fn normalize_download_filename_strips_supported_direct_extensions() {
+        assert_eq!(
+            normalize_download_filename("movie.mp4".to_string()),
+            "movie"
+        );
+        assert_eq!(
+            normalize_download_filename("movie.mkv".to_string()),
+            "movie"
+        );
+        assert_eq!(
+            normalize_download_filename("movie.webm".to_string()),
+            "movie"
+        );
+        assert_eq!(
+            normalize_download_filename("movie.rmvb".to_string()),
+            "movie"
+        );
+    }
+
+    #[test]
+    fn normalize_direct_download_filename_uses_selected_extension() {
+        assert_eq!(
+            normalize_direct_download_filename("movie".to_string(), FileType::Mp4),
+            "movie.mp4"
+        );
+        assert_eq!(
+            normalize_direct_download_filename("movie.mp4".to_string(), FileType::Mkv),
+            "movie.mkv"
+        );
+        assert_eq!(
+            normalize_direct_download_filename("movie.rmvb".to_string(), FileType::Webm),
+            "movie.webm"
+        );
     }
 
     #[test]

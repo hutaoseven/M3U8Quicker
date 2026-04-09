@@ -23,6 +23,7 @@ import type {
   ChromiumExtensionInstallResult,
   FirefoxExtensionInstallResult,
 } from "./types";
+import { parseFileType } from "./types";
 import type { ThemeMode } from "./types/settings";
 
 const { Header, Content } = Layout;
@@ -862,8 +863,8 @@ function parseDownloadDraft(deepLink: string): Omit<DownloadDraft, "nonce"> | nu
     }
 
     const extraHeaders = parsed.searchParams.get("extra_headers")?.trim() || undefined;
-    const rawFileType = parsed.searchParams.get("file_type")?.trim();
-    const fileType = rawFileType === "mp4" ? "mp4" as const : undefined;
+    const rawFileType = parsed.searchParams.get("file_type");
+    const fileType = parseFileType(rawFileType);
     return { url, extraHeaders, fileType };
   } catch (error) {
     console.debug("[m3u8quicker] failed to parse deep link", deepLink, error);
