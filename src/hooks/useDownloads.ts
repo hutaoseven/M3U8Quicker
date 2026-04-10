@@ -213,20 +213,26 @@ export function useDownloads() {
   }, []);
 
   const resume = useCallback(async (id: string) => {
-    const check = await api.checkResumeDownload(id);
-    const restartConfirmed =
-      check.action === "confirm_restart"
-        ? await confirmRestartMp4Download(check.downloaded_bytes)
-        : false;
+    try {
+      const check = await api.checkResumeDownload(id);
+      const restartConfirmed =
+        check.action === "confirm_restart"
+          ? await confirmRestartMp4Download(check.downloaded_bytes)
+          : false;
 
-    if (check.action === "confirm_restart" && !restartConfirmed) {
+      if (check.action === "confirm_restart" && !restartConfirmed) {
+        return undefined;
+      }
+
+      const task = await api.resumeDownload(id, restartConfirmed);
+      await refreshCounts();
+      await refreshGroup("active");
+      return task;
+    } catch (error) {
+      console.error("Failed to resume download:", error);
+      message.error("原地址失效或已经过期，无法恢复下载");
       return undefined;
     }
-
-    const task = await api.resumeDownload(id, restartConfirmed);
-    await refreshCounts();
-    await refreshGroup("active");
-    return task;
   }, [refreshCounts, refreshGroup]);
 
   const retryFailed = useCallback(async (id: string) => {

@@ -1,14 +1,16 @@
 import { useState, useEffect } from "react";
-import { Modal, Form, Input, Button, Space, Select, message } from "antd";
+import { Modal, Form, Input, Button, Space, Radio, message } from "antd";
 import { FolderOpenOutlined } from "@ant-design/icons";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getDefaultDownloadDir, setDefaultDownloadDir } from "../services/api";
 import {
   deriveFilenameFromUrl,
-  FILE_TYPE_OPTIONS,
+  DIRECT_FILE_TYPES,
   getFileTypeLabel,
+  inferDirectFileTypeFromUrl,
   isDirectFileType,
   type CreateDownloadParams,
+  type DownloadMode,
   type FileType,
 } from "../types";
 
@@ -35,20 +37,20 @@ export function NewDownloadModal({
   const [submitting, setSubmitting] = useState(false);
   const [outputDir, setOutputDir] = useState("");
   const [filenameTouched, setFilenameTouched] = useState(false);
-  const [fileType, setFileType] = useState<FileType>("hls");
+  const [downloadMode, setDownloadMode] = useState<DownloadMode>("hls");
+  const watchedUrl = Form.useWatch("url", form) as string | undefined;
 
   useEffect(() => {
     if (isOpen) {
       getDefaultDownloadDir().then(setOutputDir);
       setFilenameTouched(false);
-      const type = initialFileType || "hls";
-      setFileType(type);
+      const mode: DownloadMode = isDirectFileType(initialFileType) ? "direct" : "hls";
+      setDownloadMode(mode);
       form.resetFields();
       form.setFieldsValue({
         url: initialUrl || undefined,
         filename: initialUrl ? deriveFilenameFromUrl(initialUrl) || undefined : undefined,
         extra_headers: initialExtraHeaders || undefined,
-        file_type: type,
       });
     }
   }, [form, initialExtraHeaders, initialFileType, initialUrl, isOpen, resetKey]);
@@ -75,12 +77,31 @@ export function NewDownloadModal({
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      const url = values.url.trim();
+      const fileType =
+        downloadMode === "direct" ? inferDirectFileTypeFromUrl(url) : "hls";
+
+      if (!fileType) {
+        form.setFields([
+          {
+            name: "url",
+            errors: [
+              `无法从地址推断文件类型，请使用包含 ${DIRECT_FILE_TYPES.join(
+                "/"
+              )} 后缀的直链`,
+            ],
+          },
+        ]);
+        return;
+      }
+
       setSubmitting(true);
       await onSubmit({
-        url: values.url.trim(),
+        url,
         filename: values.filename?.trim() || undefined,
         output_dir: outputDir || undefined,
         extra_headers: values.extra_headers?.trim() || undefined,
+        download_mode: downloadMode,
         file_type: fileType,
       });
       message.success("下载已开始");
@@ -92,16 +113,21 @@ export function NewDownloadModal({
     }
   };
 
-  const directFileType = isDirectFileType(fileType) ? fileType : "mp4";
-  const urlLabel = isDirectFileType(fileType)
-    ? `${getFileTypeLabel(fileType)} 地址`
-    : "M3U8 地址";
-  const urlPlaceholder = isDirectFileType(fileType)
-    ? `https://example.com/video/file.${directFileType}`
-    : "https://example.com/video/playlist.m3u8";
-  const urlRequiredMessage = isDirectFileType(fileType)
-    ? `请输入 ${getFileTypeLabel(fileType)} 地址`
-    : "请输入 M3U8 地址";
+  const inferredDirectFileType = inferDirectFileTypeFromUrl(watchedUrl);
+  const urlLabel = downloadMode === "direct" ? "地址" : "M3U8 地址";
+  const supportedDirectTypes = DIRECT_FILE_TYPES.join(" / ");
+  const urlPlaceholder =
+    downloadMode === "direct"
+      ? `https://example.com/video/file.mp4\n支持 ${supportedDirectTypes} 格式`
+      : "https://example.com/video/playlist.m3u8";
+  const urlRequiredMessage =
+    downloadMode === "direct" ? "请输入 Direct 地址" : "请输入 M3U8 地址";
+  const urlExtra =
+    downloadMode === "direct"
+      ? inferredDirectFileType
+        ? `文件类型将按地址推断为 ${getFileTypeLabel(inferredDirectFileType)}`
+        : undefined
+      : undefined;
 
   return (
     <Modal
@@ -118,16 +144,22 @@ export function NewDownloadModal({
         className="new-download-form"
         onFinish={handleSubmit}
       >
-        <Form.Item name="file_type" label="文件类型">
-          <Select
-            value={fileType}
-            options={FILE_TYPE_OPTIONS}
-            onChange={(value: FileType) => setFileType(value)}
-          />
+        <Form.Item label="下载方式">
+          <Radio.Group
+            value={downloadMode}
+            onChange={(event) => {
+              setDownloadMode(event.target.value as DownloadMode);
+              form.setFields([{ name: "url", errors: [] }]);
+            }}
+          >
+            <Radio.Button value="hls">HLS</Radio.Button>
+            <Radio.Button value="direct">Direct</Radio.Button>
+          </Radio.Group>
         </Form.Item>
         <Form.Item
           name="url"
           label={urlLabel}
+          extra={urlExtra}
           rules={[{ required: true, message: urlRequiredMessage }]}
         >
           <Input.TextArea

@@ -19,6 +19,13 @@ pub enum FileType {
     Rmvb,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadMode {
+    Hls,
+    Direct,
+}
+
 impl Default for FileType {
     fn default() -> Self {
         FileType::Hls
@@ -129,7 +136,9 @@ pub struct CreateDownloadParams {
     pub output_dir: Option<String>,
     pub extra_headers: Option<String>,
     #[serde(default)]
-    pub file_type: FileType,
+    pub download_mode: Option<DownloadMode>,
+    #[serde(default)]
+    pub file_type: Option<FileType>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

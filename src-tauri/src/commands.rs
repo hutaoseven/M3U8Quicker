@@ -23,6 +23,16 @@ const FIREFOX_ADDONS_URL: &str = "about:debugging#/runtime/this-firefox";
 const NORMALIZED_DOWNLOAD_EXTENSIONS: &[&str] = &[
     "m3u8", "mp4", "mkv", "avi", "wmv", "flv", "webm", "mov", "rmvb", "ts",
 ];
+const DIRECT_DOWNLOAD_EXTENSIONS: &[(&str, FileType)] = &[
+    ("mp4", FileType::Mp4),
+    ("mkv", FileType::Mkv),
+    ("avi", FileType::Avi),
+    ("wmv", FileType::Wmv),
+    ("flv", FileType::Flv),
+    ("webm", FileType::Webm),
+    ("mov", FileType::Mov),
+    ("rmvb", FileType::Rmvb),
+];
 
 #[tauri::command]
 pub async fn create_download(
@@ -33,7 +43,7 @@ pub async fn create_download(
     let id = Uuid::new_v4().to_string();
     let client = state.http_client.read().await.clone();
     let request_headers = parse_request_headers(params.extra_headers.as_deref())?;
-    let file_type = params.file_type;
+    let file_type = resolve_create_download_file_type(&params)?;
 
     let output_dir =
         if let Some(output_dir) = params.output_dir.filter(|dir| !dir.trim().is_empty()) {
@@ -1613,6 +1623,71 @@ fn derive_filename_from_url(url: &str) -> String {
         .unwrap_or_else(|| "download".to_string())
 }
 
+fn resolve_create_download_file_type(params: &CreateDownloadParams) -> Result<FileType, AppError> {
+    if let Some(download_mode) = params.download_mode {
+        return match download_mode {
+            DownloadMode::Hls => Ok(FileType::Hls),
+            DownloadMode::Direct => infer_direct_file_type_from_url(&params.url)
+                .or_else(|| params.file_type.filter(|file_type| file_type.is_direct_download()))
+                .ok_or_else(|| {
+                    AppError::InvalidInput(
+                        "无法从地址推断 Direct 文件类型，请使用包含 mp4/mkv/avi/wmv/flv/webm/mov/rmvb 后缀的链接"
+                            .to_string(),
+                    )
+                }),
+        };
+    }
+
+    if let Some(file_type) = params.file_type {
+        if file_type.is_direct_download() {
+            return Ok(infer_direct_file_type_from_url(&params.url).unwrap_or(file_type));
+        }
+
+        return Ok(FileType::Hls);
+    }
+
+    Ok(infer_direct_file_type_from_url(&params.url).unwrap_or(FileType::Hls))
+}
+
+fn infer_direct_file_type_from_url(url: &str) -> Option<FileType> {
+    let trimmed = url.trim();
+
+    if let Ok(parsed) = url::Url::parse(trimmed) {
+        if let Some(file_type) = infer_direct_file_type_from_candidate(parsed.path()) {
+            return Some(file_type);
+        }
+
+        for key in ["filename", "file", "name", "title", "videoTitle"] {
+            if let Some((_, value)) = parsed
+                .query_pairs()
+                .find(|(query_key, _)| query_key.eq_ignore_ascii_case(key))
+            {
+                if let Some(file_type) = infer_direct_file_type_from_candidate(&value) {
+                    return Some(file_type);
+                }
+            }
+        }
+    }
+
+    infer_direct_file_type_from_candidate(trimmed)
+}
+
+fn infer_direct_file_type_from_candidate(candidate: &str) -> Option<FileType> {
+    let lower = candidate.to_ascii_lowercase();
+
+    for (extension, file_type) in DIRECT_DOWNLOAD_EXTENSIONS {
+        let suffix = format!(".{}", extension);
+        if lower.ends_with(&suffix)
+            || lower.contains(&format!(".{}?", extension))
+            || lower.contains(&format!(".{}#", extension))
+        {
+            return Some(*file_type);
+        }
+    }
+
+    None
+}
+
 fn normalize_direct_download_filename(name: String, file_type: FileType) -> String {
     let expected_extension = file_type.default_extension().unwrap_or("mp4");
     let stem = strip_known_download_extension(&name).unwrap_or(&name);
@@ -2186,6 +2261,71 @@ mod tests {
             normalize_direct_download_filename("movie.rmvb".to_string(), FileType::Webm),
             "movie.webm"
         );
+    }
+
+    #[test]
+    fn resolve_create_download_file_type_infers_direct_type_from_url() {
+        let params = CreateDownloadParams {
+            url: "https://example.com/media/movie.webm?token=abc".to_string(),
+            filename: None,
+            output_dir: None,
+            extra_headers: None,
+            download_mode: Some(DownloadMode::Direct),
+            file_type: None,
+        };
+
+        assert_eq!(
+            resolve_create_download_file_type(&params).expect("file type"),
+            FileType::Webm
+        );
+    }
+
+    #[test]
+    fn resolve_create_download_file_type_keeps_hls_mode_even_for_direct_url() {
+        let params = CreateDownloadParams {
+            url: "https://example.com/media/movie.mp4".to_string(),
+            filename: None,
+            output_dir: None,
+            extra_headers: None,
+            download_mode: Some(DownloadMode::Hls),
+            file_type: None,
+        };
+
+        assert_eq!(
+            resolve_create_download_file_type(&params).expect("file type"),
+            FileType::Hls
+        );
+    }
+
+    #[test]
+    fn resolve_create_download_file_type_updates_legacy_direct_type_from_url() {
+        let params = CreateDownloadParams {
+            url: "https://example.com/media/movie.mkv".to_string(),
+            filename: None,
+            output_dir: None,
+            extra_headers: None,
+            download_mode: None,
+            file_type: Some(FileType::Mp4),
+        };
+
+        assert_eq!(
+            resolve_create_download_file_type(&params).expect("file type"),
+            FileType::Mkv
+        );
+    }
+
+    #[test]
+    fn resolve_create_download_file_type_rejects_unknown_direct_url_extension() {
+        let params = CreateDownloadParams {
+            url: "https://example.com/media/download".to_string(),
+            filename: None,
+            output_dir: None,
+            extra_headers: None,
+            download_mode: Some(DownloadMode::Direct),
+            file_type: None,
+        };
+
+        assert!(resolve_create_download_file_type(&params).is_err());
     }
 
     #[test]

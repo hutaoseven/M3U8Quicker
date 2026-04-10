@@ -22,6 +22,8 @@ export type DirectFileType =
 
 export type FileType = "hls" | DirectFileType;
 
+export type DownloadMode = "hls" | "direct";
+
 export const DIRECT_FILE_TYPES: DirectFileType[] = [
   "mp4",
   "mkv",
@@ -104,6 +106,7 @@ export interface CreateDownloadParams {
   filename?: string;
   output_dir?: string;
   extra_headers?: string;
+  download_mode?: DownloadMode;
   file_type?: FileType;
 }
 
@@ -147,6 +150,43 @@ export function parseFileType(value: string | null | undefined): FileType | unde
   }
 
   return DIRECT_FILE_TYPES.find((fileType) => fileType === normalized);
+}
+
+export function inferDirectFileTypeFromUrl(
+  url: string | null | undefined
+): DirectFileType | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  const candidates: string[] = [];
+  const rawUrl = url.trim();
+
+  try {
+    const parsed = new URL(rawUrl);
+    candidates.push(parsed.pathname);
+
+    for (const key of ["filename", "file", "name", "title", "videoTitle"]) {
+      const value = parsed.searchParams.get(key);
+      if (value) {
+        candidates.push(value);
+      }
+    }
+  } catch {
+    candidates.push(rawUrl);
+  }
+
+  candidates.push(rawUrl);
+
+  for (const candidate of candidates) {
+    const match = candidate.match(/\.(mp4|mkv|avi|wmv|flv|webm|mov|rmvb)(?:$|[?#])/i);
+    const fileType = parseFileType(match?.[1]);
+    if (fileType && isDirectFileType(fileType)) {
+      return fileType;
+    }
+  }
+
+  return undefined;
 }
 
 export function getFileTypeLabel(fileType: FileType): string {
