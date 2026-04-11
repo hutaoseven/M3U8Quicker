@@ -25,6 +25,7 @@ pub struct AppState {
     pub playback_sessions: Arc<Mutex<HashMap<DownloadId, PlaybackSession>>>,
     pub download_priorities:
         Arc<Mutex<HashMap<DownloadId, Arc<DownloadPriorityState>>>>,
+    pub ffmpeg_path: Arc<Mutex<Option<String>>>,
 }
 
 impl AppState {
@@ -47,6 +48,7 @@ impl AppState {
             playback_server: Arc::new(RwLock::new(None)),
             playback_sessions: Arc::new(Mutex::new(HashMap::new())),
             download_priorities: Arc::new(Mutex::new(HashMap::new())),
+            ffmpeg_path: Arc::new(Mutex::new(None)),
         }
     }
 }

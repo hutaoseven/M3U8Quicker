@@ -14,4 +14,15 @@ export interface AppSettings {
   download_speed_limit_kbps: number;
   delete_ts_temp_dir_after_download: boolean;
   convert_to_mp4: boolean;
+  ffmpeg_path: string | null;
+}
+
+export type FfmpegStatus =
+  | { kind: "not_installed" }
+  | { kind: "installed"; path: string; version: string };
+
+export interface FfmpegDownloadProgress {
+  downloaded_bytes: number;
+  total_bytes: number;
+  stage: "downloading" | "unpacking" | "done";
 }

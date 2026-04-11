@@ -258,6 +258,7 @@ pub struct AppSettings {
     pub download_speed_limit_kbps: u64,
     pub delete_ts_temp_dir_after_download: bool,
     pub convert_to_mp4: bool,
+    pub ffmpeg_path: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -269,6 +270,7 @@ impl Default for AppSettings {
             download_speed_limit_kbps: DEFAULT_DOWNLOAD_SPEED_LIMIT_KBPS,
             delete_ts_temp_dir_after_download: true,
             convert_to_mp4: true,
+            ffmpeg_path: None,
         }
     }
 }

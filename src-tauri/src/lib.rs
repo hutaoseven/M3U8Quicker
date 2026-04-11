@@ -1,6 +1,7 @@
 mod commands;
 mod downloader;
 mod error;
+mod ffmpeg;
 mod models;
 mod persistence;
 mod playback;
@@ -77,6 +78,10 @@ pub fn run() {
                     let mut convert_to_mp4 = state.convert_to_mp4.lock().await;
                     *convert_to_mp4 = settings.convert_to_mp4;
                 }
+                {
+                    let mut ffmpeg_path = state.ffmpeg_path.lock().await;
+                    *ffmpeg_path = settings.ffmpeg_path;
+                }
 
                 let _ = persistence::migrate_legacy_downloads(&handle).await;
                 let saved = persistence::load_active_downloads(&handle)
@@ -135,6 +140,9 @@ pub fn run() {
             commands::open_firefox_addons_page,
             commands::merge_ts_files,
             commands::convert_ts_to_mp4_file,
+            commands::get_ffmpeg_status,
+            commands::download_ffmpeg,
+            commands::set_ffmpeg_path,
             commands::open_download_playback_session,
             commands::prioritize_download_playback_position,
             commands::close_download_playback_session,

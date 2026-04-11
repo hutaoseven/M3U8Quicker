@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  Button,
   Input,
   InputNumber,
   Modal,
+  Progress,
   Radio,
   Space,
   Switch,
@@ -10,14 +12,24 @@ import {
   Typography,
   message,
 } from "antd";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
+  downloadFfmpeg,
   getAppSettings,
+  getFfmpegStatus,
   setDownloadConcurrency,
   setDownloadOutputSettings,
   setDownloadSpeedLimit,
+  setFfmpegPath,
   setProxySettings,
 } from "../services/api";
-import type { ProxySettings, ThemeMode } from "../types/settings";
+import type {
+  FfmpegDownloadProgress,
+  FfmpegStatus,
+  ProxySettings,
+  ThemeMode,
+} from "../types/settings";
 
 const MIN_DOWNLOAD_CONCURRENCY = 1;
 const MAX_DOWNLOAD_CONCURRENCY = 64;
@@ -61,6 +73,11 @@ export function SettingsModal({
   const [savingConcurrency, setSavingConcurrency] = useState(false);
   const [savingSpeedLimit, setSavingSpeedLimit] = useState(false);
   const [savingDownloadOutput, setSavingDownloadOutput] = useState(false);
+  const [ffmpegStatus, setFfmpegStatus] = useState<FfmpegStatus | null>(null);
+  const [ffmpegDownloading, setFfmpegDownloading] = useState(false);
+  const [ffmpegDownloadProgress, setFfmpegDownloadProgress] = useState<number>(0);
+  const [ffmpegCustomPath, setFfmpegCustomPath] = useState("");
+  const ffmpegUnlistenRef = useRef<UnlistenFn | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -84,12 +101,21 @@ export function SettingsModal({
           settings.delete_ts_temp_dir_after_download
         );
         setConvertToMp4(settings.convert_to_mp4);
+        setFfmpegCustomPath(settings.ffmpeg_path ?? "");
       })
       .catch((error) => {
         message.error(`读取设置失败：${formatSettingsError(error)}`);
       })
       .finally(() => setLoading(false));
+
+    getFfmpegStatus().then(setFfmpegStatus).catch(() => {});
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      ffmpegUnlistenRef.current?.();
+    };
+  }, []);
 
   const updateProxy = async (nextProxy: ProxySettings) => {
     setProxySettingsState(nextProxy);
@@ -232,6 +258,75 @@ export function SettingsModal({
       setConvertToMp4(settings.convert_to_mp4);
     } finally {
       setSavingDownloadOutput(false);
+    }
+  };
+
+  const handleDownloadFfmpeg = async () => {
+    setFfmpegDownloading(true);
+    setFfmpegDownloadProgress(0);
+
+    const unlisten = await listen<FfmpegDownloadProgress>(
+      "ffmpeg-download-progress",
+      (event) => {
+        const { total_bytes, downloaded_bytes, stage } = event.payload;
+        if (stage === "downloading" && total_bytes > 0) {
+          setFfmpegDownloadProgress(
+            Math.round((downloaded_bytes / total_bytes) * 90)
+          );
+        } else if (stage === "unpacking") {
+          setFfmpegDownloadProgress(95);
+        } else if (stage === "done") {
+          setFfmpegDownloadProgress(100);
+        }
+      }
+    );
+    ffmpegUnlistenRef.current = unlisten;
+
+    try {
+      await downloadFfmpeg();
+      message.success("FFmpeg 下载完成");
+      const status = await getFfmpegStatus();
+      setFfmpegStatus(status);
+    } catch (error) {
+      message.error(`FFmpeg 下载失败：${String(error)}`);
+    } finally {
+      setFfmpegDownloading(false);
+      setFfmpegDownloadProgress(0);
+      unlisten();
+      ffmpegUnlistenRef.current = null;
+    }
+  };
+
+  const handleSetFfmpegCustomPath = async () => {
+    const selected = await openDialog({
+      multiple: false,
+      filters: [{ name: "FFmpeg", extensions: ["exe", "*"] }],
+    });
+    if (!selected) return;
+
+    const filePath = typeof selected === "string" ? selected : selected;
+    setFfmpegCustomPath(filePath);
+    try {
+      const status = await setFfmpegPath(filePath);
+      setFfmpegStatus(status);
+      if (status.kind === "installed") {
+        message.success("FFmpeg 路径已保存");
+      } else {
+        message.warning("所选文件不是有效的 FFmpeg");
+      }
+    } catch (error) {
+      message.error(`设置 FFmpeg 路径失败：${String(error)}`);
+    }
+  };
+
+  const handleResetFfmpegPath = async () => {
+    setFfmpegCustomPath("");
+    try {
+      const status = await setFfmpegPath(null);
+      setFfmpegStatus(status);
+      message.success("已重置为自动检测");
+    } catch (error) {
+      message.error(`重置 FFmpeg 路径失败：${String(error)}`);
     }
   };
 
@@ -400,6 +495,70 @@ export function SettingsModal({
                 />
               </Space>
             </Space>
+          </Space>
+        </Space>
+      ),
+    },
+    {
+      key: "ffmpeg",
+      label: "FFmpeg",
+      children: (
+        <Space direction="vertical" size={18} style={{ width: "100%" }}>
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Typography.Text strong>状态</Typography.Text>
+            <Space size={12} align="center">
+              {ffmpegStatus?.kind === "installed" ? (
+                <Typography.Text type="success">
+                  已安装 (v{ffmpegStatus.version})
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="danger">未安装</Typography.Text>
+              )}
+            </Space>
+            {ffmpegStatus?.kind === "installed" && (
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 12, wordBreak: "break-all" }}
+              >
+                {ffmpegStatus.path}
+              </Typography.Text>
+            )}
+          </Space>
+          {ffmpegStatus?.kind !== "installed" && (
+            <Space direction="vertical" size={8} style={{ width: "100%" }}>
+              <Typography.Text strong>自动下载</Typography.Text>
+              {ffmpegDownloading && (
+                <Progress percent={ffmpegDownloadProgress} size="small" />
+              )}
+              <Button
+                type="primary"
+                loading={ffmpegDownloading}
+                onClick={() => void handleDownloadFfmpeg()}
+              >
+                一键下载
+              </Button>
+            </Space>
+          )}
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Typography.Text strong>自定义路径</Typography.Text>
+            <Space size={8}>
+              <Button onClick={() => void handleSetFfmpegCustomPath()}>
+                选择文件
+              </Button>
+              {ffmpegCustomPath && (
+                <Button onClick={() => void handleResetFfmpegPath()}>
+                  重置
+                </Button>
+              )}
+            </Space>
+            {ffmpegCustomPath && (
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 12, wordBreak: "break-all" }}
+              >
+                {ffmpegCustomPath}
+              </Typography.Text>
+            )}
           </Space>
         </Space>
       ),

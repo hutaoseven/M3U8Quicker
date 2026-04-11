@@ -1680,6 +1680,7 @@ pub async fn run_download(
     playback_sessions: Arc<Mutex<HashMap<DownloadId, playback::PlaybackSession>>>,
     download_priorities: Arc<Mutex<HashMap<DownloadId, Arc<playback::DownloadPriorityState>>>>,
     convert_to_mp4: bool,
+    ffmpeg_path: Option<PathBuf>,
     cancel_token: CancellationToken,
     max_concurrent: Arc<Mutex<usize>>,
 ) -> Result<DownloadRunOutcome, AppError> {
@@ -1973,7 +1974,7 @@ pub async fn run_download(
         let mp4_filename = ensure_extension(&filename, "mp4");
         let mp4_path = resolve_available_output_path(&output_dir, &mp4_filename);
 
-        match convert_ts_to_mp4_file(&ts_path, &mp4_path, true).await {
+        match convert_ts_to_mp4_file(&ts_path, &mp4_path, true, ffmpeg_path.as_deref()).await {
             Ok(()) => mp4_path,
             Err(_) => ts_path,
         }
@@ -3026,17 +3027,41 @@ pub async fn convert_ts_to_mp4_file(
     ts_path: &Path,
     mp4_path: &Path,
     delete_source: bool,
+    ffmpeg_path: Option<&Path>,
 ) -> Result<(), AppError> {
     let ts_path = ts_path.to_path_buf();
     let blocking_ts_path = ts_path.clone();
     let blocking_mp4_path = mp4_path.to_path_buf();
 
-    tokio::task::spawn_blocking(move || {
+    let remux_result = tokio::task::spawn_blocking(move || {
         crate::remux::remux_ts_to_mp4_file(&blocking_ts_path, &blocking_mp4_path)
     })
     .await
-    .map_err(|e| AppError::Conversion(format!("Task join error: {}", e)))?
-    .map_err(|e| AppError::Conversion(format!("TS to MP4 conversion failed: {}", e)))?;
+    .map_err(|e| AppError::Conversion(format!("Task join error: {}", e)))?;
+
+    match remux_result {
+        Ok(()) => {}
+        Err(remux_err) => {
+            // Clean up partial mp4 from failed remux
+            let _ = tokio::fs::remove_file(mp4_path).await;
+
+            if let Some(ffmpeg) = ffmpeg_path {
+                crate::ffmpeg::convert_ts_to_mp4(ffmpeg, &ts_path, mp4_path)
+                    .await
+                    .map_err(|e| {
+                        AppError::Conversion(format!(
+                            "Rust remux: {}; ffmpeg: {}",
+                            remux_err, e
+                        ))
+                    })?;
+            } else {
+                return Err(AppError::Conversion(format!(
+                    "TS to MP4 conversion failed: {} (ffmpeg 未安装，无法自动回退)",
+                    remux_err
+                )));
+            }
+        }
+    }
 
     if delete_source {
         let _ = tokio::fs::remove_file(ts_path).await;

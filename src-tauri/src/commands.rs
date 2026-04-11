@@ -903,6 +903,7 @@ pub async fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings,
         download_speed_limit_kbps: state.download_rate_limiter.limit_kbps().await,
         delete_ts_temp_dir_after_download: *state.delete_ts_temp_dir_after_download.lock().await,
         convert_to_mp4: *state.convert_to_mp4.lock().await,
+        ffmpeg_path: state.ffmpeg_path.lock().await.clone(),
     })
 }
 
@@ -1279,6 +1280,7 @@ pub async fn merge_ts_files(input_dir: String, output_path: String) -> Result<St
 
 #[tauri::command]
 pub async fn convert_ts_to_mp4_file(
+    app_handle: AppHandle,
     input_path: String,
     output_path: String,
 ) -> Result<String, AppError> {
@@ -1299,9 +1301,46 @@ pub async fn convert_ts_to_mp4_file(
         tokio::fs::create_dir_all(parent).await?;
     }
 
+    let ffmpeg_path = crate::ffmpeg::resolve_ffmpeg_path(&app_handle).await;
     let resolved_output_path = downloader::resolve_available_file_path(&output_path);
-    downloader::convert_ts_to_mp4_file(&input_path, &resolved_output_path, false).await?;
+    downloader::convert_ts_to_mp4_file(
+        &input_path,
+        &resolved_output_path,
+        false,
+        ffmpeg_path.as_deref(),
+    )
+    .await?;
     Ok(resolved_output_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn get_ffmpeg_status(
+    app_handle: AppHandle,
+) -> Result<crate::ffmpeg::FfmpegStatus, AppError> {
+    Ok(crate::ffmpeg::detect_ffmpeg(&app_handle).await)
+}
+
+#[tauri::command]
+pub async fn download_ffmpeg(app_handle: AppHandle) -> Result<String, AppError> {
+    let path = crate::ffmpeg::download_ffmpeg(app_handle).await?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn set_ffmpeg_path(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    path: Option<String>,
+) -> Result<crate::ffmpeg::FfmpegStatus, AppError> {
+    {
+        let mut ffmpeg_path = state.ffmpeg_path.lock().await;
+        *ffmpeg_path = path.clone();
+    }
+    persistence::update_settings(&app_handle, |settings| {
+        settings.ffmpeg_path = path;
+    })
+    .await;
+    Ok(crate::ffmpeg::detect_ffmpeg(&app_handle).await)
 }
 
 async fn ensure_task_playback_ready(
@@ -1723,6 +1762,7 @@ async fn start_download_worker(
         .lock()
         .await;
     let convert_to_mp4 = *app_handle.state::<AppState>().convert_to_mp4.lock().await;
+    let ffmpeg_path = crate::ffmpeg::resolve_ffmpeg_path(&app_handle).await;
     let rate_limiter = app_handle.state::<AppState>().download_rate_limiter.clone();
 
     {
@@ -1745,6 +1785,7 @@ async fn start_download_worker(
             state_playback_sessions.clone(),
             state_download_priorities.clone(),
             convert_to_mp4,
+            ffmpeg_path,
             cancel_token,
             max_concurrent,
         )

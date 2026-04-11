@@ -14,7 +14,7 @@ import type {
   OpenPlaybackSessionResponse,
   ResumeDownloadCheckResult,
 } from "../types";
-import type { AppSettings, ProxySettings } from "../types/settings";
+import type { AppSettings, FfmpegStatus, ProxySettings } from "../types/settings";
 
 export async function createDownload(
   params: CreateDownloadParams
@@ -197,4 +197,18 @@ export async function convertTsToMp4File(
   outputPath: string
 ): Promise<string> {
   return invoke<string>("convert_ts_to_mp4_file", { inputPath, outputPath });
+}
+
+export async function getFfmpegStatus(): Promise<FfmpegStatus> {
+  return invoke<FfmpegStatus>("get_ffmpeg_status");
+}
+
+export async function downloadFfmpeg(): Promise<string> {
+  return invoke<string>("download_ffmpeg");
+}
+
+export async function setFfmpegPath(
+  path: string | null
+): Promise<FfmpegStatus> {
+  return invoke<FfmpegStatus>("set_ffmpeg_path", { path });
 }
