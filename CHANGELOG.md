@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.3
+- 增加多音轨（视频、音频、字幕分离的m3u8）下载和合并mp4（依赖FFmpeg）
+- 增加FFmpeg的支持和工具
+- 增加工具：本地m3u8转mp4
+
+## 1.0.2
+- 支持更多视频格式下载：mp4/mkv/avi/wmv/flv/webm/mov/rmvb
+- 增加下载限速设置
+
 ## 1.0.1
 - 修复ts转mp4失败前的校验
 - 增加浏览器扩展：Firefox、Microsoft Edge
