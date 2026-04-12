@@ -98,12 +98,6 @@ origin:https://example.com
 - 下载完成后是否删除临时 ts 目录、自动转换为 mp4
 - FFmpeg下载和管理
 
-### FFmpeg 与第三方许可
-
-- 应用的部分转码、分析和多轨合成功能依赖 `FFmpeg`
-- 应用会优先使用用户手动指定的 `FFmpeg`、系统 `PATH` 中的 `FFmpeg`，或在用户主动操作后下载第三方 `FFmpeg` 二进制到应用数据目录
-- `FFmpeg` 及其相关二进制不属于本仓库源码的一部分，也不受本仓库 `Apache-2.0` 许可证覆盖
-- 关于 `FFmpeg` 下载来源、许可证和第三方说明，请参见仓库根目录下的 `THIRD_PARTY_NOTICES.md`
 
 ## 浏览器扩展（可选）
 
