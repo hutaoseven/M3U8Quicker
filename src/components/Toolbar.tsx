@@ -1,7 +1,9 @@
 import { Button, Dropdown, Space, Typography, theme } from "antd";
 import {
+  ApartmentOutlined,
   ChromeOutlined,
   DeploymentUnitOutlined,
+  FileSearchOutlined,
   GlobalOutlined,
   MergeCellsOutlined,
   DownOutlined,
@@ -45,9 +47,24 @@ export function Toolbar({
       icon: <DeploymentUnitOutlined />,
       children: [
         {
+          key: "format-convert",
+          label: "格式转换",
+          icon: <SwapOutlined />,
+        },
+        {
+          key: "codec-convert",
+          label: "编码转换",
+          icon: <SwapOutlined />,
+        },
+        {
+          key: "analyze-media",
+          label: "分析视频",
+          icon: <FileSearchOutlined />,
+        },
+        {
           key: "multi-track-hls-to-mp4",
           label: "多轨 HLS 转 mp4",
-          icon: <SwapOutlined />,
+          icon: <ApartmentOutlined />,
         },
       ],
     },

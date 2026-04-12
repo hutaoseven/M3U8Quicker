@@ -13,6 +13,7 @@ import type {
   InspectHlsTracksResult,
   OpenPlaybackSessionResponse,
   ResumeDownloadCheckResult,
+  MediaAnalysisResult,
 } from "../types";
 import type { AppSettings, FfmpegStatus, ProxySettings } from "../types/settings";
 
@@ -197,6 +198,42 @@ export async function convertTsToMp4File(
   outputPath: string
 ): Promise<string> {
   return invoke<string>("convert_ts_to_mp4_file", { inputPath, outputPath });
+}
+
+export async function convertMediaFile(
+  inputPath: string,
+  outputPath: string,
+  targetFormat: string,
+  convertMode: string
+): Promise<string> {
+  return invoke<string>("convert_media_file", {
+    inputPath,
+    outputPath,
+    targetFormat,
+    convertMode,
+  });
+}
+
+export async function analyzeMediaFile(
+  inputPath: string
+): Promise<MediaAnalysisResult> {
+  return invoke<MediaAnalysisResult>("analyze_media_file", { inputPath });
+}
+
+export async function transcodeMediaFile(
+  inputPath: string,
+  outputPath: string,
+  outputFormat: string,
+  videoCodec: string,
+  audioCodec: string
+): Promise<string> {
+  return invoke<string>("transcode_media_file", {
+    inputPath,
+    outputPath,
+    outputFormat,
+    videoCodec,
+    audioCodec,
+  });
 }
 
 export async function convertMultiTrackHlsToMp4Dir(

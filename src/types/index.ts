@@ -180,6 +180,42 @@ export interface FirefoxExtensionInstallResult {
   manual_url: string;
 }
 
+export interface MediaAnalysisStream {
+  index: number;
+  codec_type: string | null;
+  codec_name: string | null;
+  codec_long_name: string | null;
+  profile: string | null;
+  width: number | null;
+  height: number | null;
+  pix_fmt: string | null;
+  level: number | null;
+  r_frame_rate: string | null;
+  avg_frame_rate: string | null;
+  sample_rate: string | null;
+  channels: number | null;
+  channel_layout: string | null;
+  bit_rate: string | null;
+  duration: string | null;
+  language: string | null;
+}
+
+export interface MediaAnalysisResult {
+  file_path: string;
+  format_name: string | null;
+  format_long_name: string | null;
+  duration: string | null;
+  size: string | null;
+  bit_rate: string | null;
+  probe_score: number | null;
+  stream_count: number;
+  video_streams: MediaAnalysisStream[];
+  audio_streams: MediaAnalysisStream[];
+  subtitle_streams: MediaAnalysisStream[];
+  other_streams: MediaAnalysisStream[];
+  raw_json: string;
+}
+
 export function isDirectFileType(
   fileType: FileType | null | undefined
 ): fileType is DirectFileType {

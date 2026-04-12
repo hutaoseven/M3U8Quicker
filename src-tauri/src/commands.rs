@@ -192,8 +192,9 @@ pub async fn create_download(
                 Ok(persistence::task_to_summary(&task))
             }
             downloader::PreparedHlsDownload::Bundle(prepared) => {
-                let bundle_dir =
-                    resolve_bundle_output_dir(Path::new(&output_dir), &filename).to_string_lossy().to_string();
+                let bundle_dir = resolve_bundle_output_dir(Path::new(&output_dir), &filename)
+                    .to_string_lossy()
+                    .to_string();
                 let task = DownloadTask {
                     id: id.clone(),
                     url: params.url.clone(),
@@ -442,7 +443,9 @@ pub async fn resume_download(
                 .file_path
                 .clone()
                 .map(PathBuf::from)
-                .unwrap_or_else(|| resolve_bundle_output_dir(Path::new(&task.output_dir), &task.filename));
+                .unwrap_or_else(|| {
+                    resolve_bundle_output_dir(Path::new(&task.output_dir), &task.filename)
+                });
 
             let updated_task = {
                 let mut downloads = state.downloads.lock().await;
@@ -629,7 +632,9 @@ pub async fn retry_failed_segments(
                 .file_path
                 .clone()
                 .map(PathBuf::from)
-                .unwrap_or_else(|| resolve_bundle_output_dir(Path::new(&task.output_dir), &task.filename));
+                .unwrap_or_else(|| {
+                    resolve_bundle_output_dir(Path::new(&task.output_dir), &task.filename)
+                });
 
             let updated_task = {
                 let mut downloads = state.downloads.lock().await;
@@ -1036,9 +1041,7 @@ pub async fn open_download_playback_session(
     let task = get_or_load_task(&app_handle, &state, &id).await?;
 
     if !task.playback_available {
-        return Err(AppError::InvalidInput(
-            "多轨下载暂不支持播放".to_string(),
-        ));
+        return Err(AppError::InvalidInput("多轨下载暂不支持播放".to_string()));
     }
 
     if !playback::task_can_open_playback(&task) {
@@ -1311,6 +1314,158 @@ pub async fn convert_ts_to_mp4_file(
         false,
         ffmpeg_enabled,
         ffmpeg_path.as_deref(),
+    )
+    .await?;
+    Ok(resolved_output_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn convert_media_file(
+    app_handle: AppHandle,
+    input_path: String,
+    output_path: String,
+    target_format: String,
+    convert_mode: String,
+) -> Result<String, AppError> {
+    let input_path = PathBuf::from(input_path.trim());
+    let output_path = PathBuf::from(output_path.trim());
+    let target_format = target_format.trim().to_lowercase();
+    let convert_mode = convert_mode.trim().to_lowercase();
+
+    if input_path.as_os_str().is_empty() || !input_path.is_file() {
+        return Err(AppError::InvalidInput("请选择有效的媒体文件".to_string()));
+    }
+    if output_path.as_os_str().is_empty() {
+        return Err(AppError::InvalidInput("输出文件不能为空".to_string()));
+    }
+    if target_format.is_empty() {
+        return Err(AppError::InvalidInput("请选择目标格式".to_string()));
+    }
+    if convert_mode.is_empty() {
+        return Err(AppError::InvalidInput("请选择转换模式".to_string()));
+    }
+
+    let ffmpeg_enabled = *app_handle.state::<AppState>().ffmpeg_enabled.lock().await;
+    if !ffmpeg_enabled {
+        return Err(AppError::InvalidInput(
+            "FFmpeg 开关未开启，请先在设置 -> FFmpeg 中开启".to_string(),
+        ));
+    }
+    let ffmpeg_path = crate::ffmpeg::resolve_ffmpeg_path(&app_handle)
+        .await
+        .ok_or_else(|| {
+            AppError::InvalidInput(
+                "未检测到可用的 FFmpeg，请先在设置 -> FFmpeg 中配置或下载 FFmpeg".to_string(),
+            )
+        })?;
+
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    let resolved_output_path = downloader::resolve_available_file_path(&output_path);
+    crate::ffmpeg::convert_media_file(
+        &ffmpeg_path,
+        &input_path,
+        &resolved_output_path,
+        &target_format,
+        &convert_mode,
+    )
+    .await?;
+    Ok(resolved_output_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn analyze_media_file(
+    app_handle: AppHandle,
+    input_path: String,
+) -> Result<crate::ffmpeg::MediaAnalysisResult, AppError> {
+    let input_path = PathBuf::from(input_path.trim());
+
+    if input_path.as_os_str().is_empty() || !input_path.is_file() {
+        return Err(AppError::InvalidInput("请选择有效的媒体文件".to_string()));
+    }
+
+    let ffmpeg_enabled = *app_handle.state::<AppState>().ffmpeg_enabled.lock().await;
+    if !ffmpeg_enabled {
+        return Err(AppError::InvalidInput(
+            "FFmpeg 开关未开启，请先在设置 -> FFmpeg 中开启".to_string(),
+        ));
+    }
+    let ffmpeg_path = crate::ffmpeg::resolve_ffmpeg_path(&app_handle)
+        .await
+        .ok_or_else(|| {
+            AppError::InvalidInput(
+                "未检测到可用的 FFmpeg，请先在设置 -> FFmpeg 中配置或下载 FFmpeg".to_string(),
+            )
+        })?;
+
+    crate::ffmpeg::analyze_media_file(&ffmpeg_path, &input_path).await
+}
+
+#[tauri::command]
+pub async fn transcode_media_file(
+    app_handle: AppHandle,
+    input_path: String,
+    output_path: String,
+    output_format: String,
+    video_codec: String,
+    audio_codec: String,
+) -> Result<String, AppError> {
+    let input_path = PathBuf::from(input_path.trim());
+    let output_path = PathBuf::from(output_path.trim());
+    let output_format = output_format.trim().to_lowercase();
+    let video_codec = video_codec.trim().to_lowercase();
+    let audio_codec = audio_codec.trim().to_lowercase();
+
+    if input_path.as_os_str().is_empty() || !input_path.is_file() {
+        return Err(AppError::InvalidInput("请选择有效的媒体文件".to_string()));
+    }
+    if output_path.as_os_str().is_empty() {
+        return Err(AppError::InvalidInput("输出文件不能为空".to_string()));
+    }
+    if output_format.is_empty() {
+        return Err(AppError::InvalidInput("请选择输出格式".to_string()));
+    }
+    if video_codec.is_empty() {
+        return Err(AppError::InvalidInput("请选择视频编码".to_string()));
+    }
+    if audio_codec.is_empty() {
+        return Err(AppError::InvalidInput("请选择音频编码".to_string()));
+    }
+
+    let ffmpeg_enabled = *app_handle.state::<AppState>().ffmpeg_enabled.lock().await;
+    if !ffmpeg_enabled {
+        return Err(AppError::InvalidInput(
+            "FFmpeg 开关未开启，请先在设置 -> FFmpeg 中开启".to_string(),
+        ));
+    }
+    let ffmpeg_path = crate::ffmpeg::resolve_ffmpeg_path(&app_handle)
+        .await
+        .ok_or_else(|| {
+            AppError::InvalidInput(
+                "未检测到可用的 FFmpeg，请先在设置 -> FFmpeg 中配置或下载 FFmpeg".to_string(),
+            )
+        })?;
+
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    let resolved_output_path = downloader::resolve_available_file_path(&output_path);
+    crate::ffmpeg::transcode_media_file(
+        &ffmpeg_path,
+        &input_path,
+        &resolved_output_path,
+        &output_format,
+        &video_codec,
+        &audio_codec,
     )
     .await?;
     Ok(resolved_output_path.to_string_lossy().to_string())
@@ -3161,7 +3316,9 @@ mod tests {
 
         let bundle = resolve_local_hls_bundle_paths(&temp_root).expect("valid bundle");
 
-        assert!(bundle.video_playlist.ends_with(Path::new("video").join("index.m3u8")));
+        assert!(bundle
+            .video_playlist
+            .ends_with(Path::new("video").join("index.m3u8")));
         assert!(bundle.audio_playlist.is_some());
         assert!(bundle.subtitle_playlist.is_some());
         remove_temp_dir(&temp_root);
