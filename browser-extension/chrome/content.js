@@ -535,7 +535,7 @@
   function buildTargetsWithUniqueNames(items) {
     const totals = new Map();
     items.forEach((item) => {
-      const key = String(item.fileName || "").toLowerCase();
+      const key = String(getCurrentTitleFromUrl(item.url) || "").trim().toLowerCase();
       if (!key) {
         return;
       }
@@ -544,34 +544,25 @@
 
     const indexes = new Map();
     return items.map((item) => {
-      const fileName = item.fileName || "video";
-      const key = fileName.toLowerCase();
+      const title = String(getCurrentTitleFromUrl(item.url) || "").trim();
+      const key = title.toLowerCase();
       const total = totals.get(key) || 0;
-      if (total <= 1) {
+      if (!key || total <= 1) {
         return {
           ...item,
-          displayName: fileName,
+          displayName: item.fileName || "video",
           batchUrl: item.url
         };
       }
 
       const nextIndex = (indexes.get(key) || 0) + 1;
       indexes.set(key, nextIndex);
-      const displayName = appendNameIndex(fileName, nextIndex);
-      const originalTitle = getCurrentTitleFromUrl(item.url) || fileName;
       return {
         ...item,
-        displayName,
-        batchUrl: appendCustomTitle(item.url, appendNameIndex(originalTitle, nextIndex))
+        displayName: item.fileName || "video",
+        batchUrl: appendCustomTitle(item.url, `${title}-${nextIndex}`)
       };
     });
-  }
-
-  function appendNameIndex(fileName, index) {
-    const match = String(fileName).match(/^(.*?)(\.[^./\\]+)?$/);
-    const baseName = match && match[1] ? match[1] : String(fileName);
-    const extension = match && match[2] ? match[2] : "";
-    return `${baseName}-${index}${extension}`;
   }
 
   function getCurrentTitleFromUrl(url) {

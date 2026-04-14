@@ -13,12 +13,18 @@ import type {
 import * as api from "../services/api";
 
 const DEFAULT_PAGE_SIZE = 50;
+const BATCH_CREATE_CONCURRENCY = 3;
 
 interface PageState {
   items: DownloadTaskSummary[];
   total: number;
   page: number;
   pageSize: number;
+}
+
+interface BatchAddDownloadResult {
+  task?: DownloadTaskSummary;
+  error?: unknown;
 }
 
 const INITIAL_PAGE_STATE: PageState = {
@@ -208,6 +214,47 @@ export function useDownloads() {
     return task;
   }, [refreshCounts, refreshGroup]);
 
+  const addDownloadsBatch = useCallback(
+    async (paramsList: CreateDownloadParams[]): Promise<BatchAddDownloadResult[]> => {
+      const results: BatchAddDownloadResult[] = Array.from(
+        { length: paramsList.length },
+        () => ({})
+      );
+      let nextIndex = 0;
+      let successCount = 0;
+
+      const workerCount = Math.min(BATCH_CREATE_CONCURRENCY, paramsList.length);
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (true) {
+          const currentIndex = nextIndex;
+          nextIndex += 1;
+
+          if (currentIndex >= paramsList.length) {
+            return;
+          }
+
+          try {
+            const task = await api.createDownload(paramsList[currentIndex]);
+            results[currentIndex] = { task };
+            successCount += 1;
+          } catch (error) {
+            results[currentIndex] = { error };
+          }
+        }
+      });
+
+      await Promise.all(workers);
+
+      if (successCount > 0) {
+        await refreshCounts();
+        await refreshGroup("active", 1);
+      }
+
+      return results;
+    },
+    [refreshCounts, refreshGroup]
+  );
+
   const pause = useCallback(async (id: string) => {
     await api.pauseDownload(id);
   }, []);
@@ -305,6 +352,7 @@ export function useDownloads() {
     loadingActive: loadingGroups.active,
     loadingHistory: loadingGroups.history,
     addDownload,
+    addDownloadsBatch,
     pause,
     resume,
     retryFailed,

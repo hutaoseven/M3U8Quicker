@@ -119,6 +119,7 @@ function App({ themeMode, onThemeModeChange }: AppProps) {
     completedPageSize,
     completedTotal,
     addDownload,
+    addDownloadsBatch,
     pause,
     resume,
     retryFailed,
@@ -480,8 +481,8 @@ function App({ themeMode, onThemeModeChange }: AppProps) {
           setBatchDownloadModalOpen(false);
           setBatchDownloadDraft(null);
         }}
-        onSubmit={async (params) => {
-          await addDownload(params);
+        onSubmit={async (paramsList) => {
+          return addDownloadsBatch(paramsList);
         }}
       />
       <Modal

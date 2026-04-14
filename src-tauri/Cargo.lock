@@ -2302,7 +2302,7 @@ dependencies = [
 
 [[package]]
 name = "m3u8quicker"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "aes",
  "axum",

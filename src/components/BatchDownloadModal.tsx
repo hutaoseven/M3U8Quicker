@@ -28,7 +28,9 @@ interface BatchDownloadModalProps {
   initialExtraHeaders?: string;
   resetKey?: number;
   onClose: () => void;
-  onSubmit: (params: CreateDownloadParams) => Promise<void>;
+  onSubmit: (
+    paramsList: CreateDownloadParams[]
+  ) => Promise<Array<{ error?: unknown }>>;
 }
 
 interface ParsedBatchItem {
@@ -124,23 +126,30 @@ export function BatchDownloadModal({
     const failed: Array<{ item: ParsedBatchItem; error: string }> = [];
 
     try {
-      for (const item of validItems) {
-        try {
-          await onSubmit({
-            url: item.url,
-            filename: item.filename || undefined,
-            output_dir: outputDir || undefined,
-            extra_headers: extraHeaders.trim() || undefined,
-            download_mode: item.mode,
-            file_type: item.fileType,
-          });
-        } catch (error) {
+      const submitResults = await onSubmit(
+        validItems.map((item) => ({
+          url: item.url,
+          filename: item.filename || undefined,
+          output_dir: outputDir || undefined,
+          extra_headers: extraHeaders.trim() || undefined,
+          download_mode: item.mode,
+          file_type: item.fileType,
+        }))
+      );
+
+      submitResults.forEach((result, index) => {
+        if (!result?.error) {
+          return;
+        }
+
+        const item = validItems[index];
+        if (item) {
           failed.push({
             item,
-            error: formatBatchCreateError(error),
+            error: formatBatchCreateError(result.error),
           });
         }
-      }
+      });
 
       if (failed.length === 0) {
         message.success(`已添加 ${validItems.length} 个下载任务`);
@@ -177,7 +186,7 @@ export function BatchDownloadModal({
             按行粘贴下载地址，每行一条。
           </Typography.Paragraph>
           <TextArea
-            rows={7}
+            rows={5}
             value={rawInput}
             onChange={(event) => setRawInput(event.target.value)}
             placeholder={[
@@ -207,7 +216,7 @@ export function BatchDownloadModal({
                 rowKey="key"
                 pagination={false}
                 dataSource={parsedItems}
-                scroll={{ y: 220 }}
+                scroll={{ y: 200 }}
                 columns={[
                   {
                     title: "下载方式",
@@ -295,10 +304,10 @@ export function BatchDownloadModal({
         </div>
 
         <div>
-          <Typography.Text strong>统一 Header</Typography.Text>
+          <Typography.Text strong>附加 Header</Typography.Text>
           <div style={{ marginTop: 8 }}>
             <TextArea
-              rows={4}
+              rows={3}
               value={extraHeaders}
               onChange={(event) => setExtraHeaders(event.target.value)}
               placeholder={
